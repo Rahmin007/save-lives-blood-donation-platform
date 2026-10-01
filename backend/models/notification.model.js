@@ -13,7 +13,7 @@ const notificationSchema = new mongoose.Schema(
     },
     post: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Post", // Link to the post
+      ref: "Post", // Link to the post (bank-request notifications leave this empty)
       required: false,
     },
     isRead: {
@@ -23,6 +23,8 @@ const notificationSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+notificationSchema.index({ user: 1, createdAt: -1 });
 
 const Notification = mongoose.model("Notification", notificationSchema);
 

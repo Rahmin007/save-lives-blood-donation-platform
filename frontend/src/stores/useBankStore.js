@@ -1,12 +1,8 @@
 import { create } from "zustand";
-import axios from "axios";
+import toast from "react-hot-toast";
+import { api, errorMessage } from "../lib/api";
 
-const axiosInstance = axios.create({
-  baseURL: "http://localhost:3000/api",
-  withCredentials: true,
-});
-
-export const useBankStore = create((set, get) => ({
+export const useBankStore = create((set) => ({
   bankData: [],
   filteredBankData: [],
   bankRequests: [],
@@ -16,40 +12,34 @@ export const useBankStore = create((set, get) => ({
   filterBanks: async (bloodgroup) => {
     set({ loading: true });
     try {
-      const res = await axiosInstance.get(
-        "/searchFilter/filterBanksByBloodGroup",
-        { params: { bloodgroup } }
-      );
-      set({ filteredBankData: res.data.banks }); // only update filtered data
+      const res = await api.get("/searchFilter/filterBanksByBloodGroup", { params: { bloodgroup } });
+      set({ filteredBankData: res.data.banks });
       return res.data;
     } catch (error) {
-      console.log("error filtering banks", error.response?.data);
+      toast.error(errorMessage(error, "Could not search blood banks."));
     } finally {
       set({ loading: false });
     }
   },
 
   fetchBankData: async () => {
-    set({ loading: true });
     try {
-      const res = await axiosInstance.get("/bank/getAllBankData");
-      set({
-        bankData: res.data,
-      });
+      set({ bankData: (await api.get("/bank/getAllBankData")).data });
     } catch (error) {
-      console.log("error fetching bank data", error.response?.data);
-    } finally {
-      set({ loading: false });
+      toast.error(errorMessage(error, "Could not load blood banks."));
     }
   },
 
+  /** Returns true on success. */
   createBankRequest: async (data) => {
     set({ loading: true });
     try {
-      const res = await axiosInstance.post("/bank/createbankrequest", data);
-      return res;
+      await api.post("/bank/createbankrequest", data);
+      toast.success("Request sent. You'll get a notification when it's processed.");
+      return true;
     } catch (error) {
-      console.log("error creating bank request", error.response?.data);
+      toast.error(errorMessage(error, "Could not send the request."));
+      return false;
     } finally {
       set({ loading: false });
     }
@@ -58,55 +48,44 @@ export const useBankStore = create((set, get) => ({
   fetchBankRequests: async () => {
     set({ loading: true });
     try {
-      const res = await axiosInstance.get("/bank/getAllBankRequests");
-      set({ bankRequests: res.data });
+      set({ bankRequests: (await api.get("/bank/getAllBankRequests")).data });
     } catch (error) {
-      console.log("error fetching bank requests", error.response?.data);
+      toast.error(errorMessage(error, "Could not load requests."));
     } finally {
       set({ loading: false });
     }
   },
 
   processBankRequest: async (requestid, action) => {
-    set({ loading: true });
     try {
-      const res = await axiosInstance.patch(
-        `/bank/processBankRequest/${requestid}`,
-        { action }
-      );
-      const updatedRequests = get().bankRequests.filter(
-        (req) => req._id !== requestid
-      );
-      set({ bankRequests: updatedRequests });
-      return res;
+      const { request } = (await api.patch(`/bank/processBankrequest/${requestid}`, { action })).data;
+      set((state) => ({
+        bankRequests: state.bankRequests.map((r) => (r._id === requestid ? { ...r, status: request.status } : r)),
+      }));
+      toast.success(`Request ${action}.`);
     } catch (error) {
-      console.log("error processing bank request", error.response?.data);
-    } finally {
-      set({ loading: false });
+      toast.error(errorMessage(error, "Could not process the request."));
     }
   },
 
   updateBankDetails: async (bankid, updatedData) => {
-    set({ loading: true });
     try {
-      const res = await axiosInstance.patch(
-        `/bank/updateBankDetails/${bankid}`,
-        updatedData
-      );
-      return res;
+      const { bank } = (await api.patch(`/bank/updateBankDetails/${bankid}`, updatedData)).data;
+      set((state) => ({ bankData: state.bankData.map((b) => (b._id === bankid ? bank : b)) }));
+      toast.success("Blood bank updated.");
+      return true;
     } catch (error) {
-      console.log("error updating bank details", error.response?.data);
-    } finally {
-      set({ loading: false });
+      toast.error(errorMessage(error, "Could not update the blood bank."));
+      return false;
     }
   },
+
   getUserBankRequests: async () => {
     set({ loading: true });
     try {
-      const res = await axiosInstance.get("/bank/getUserBankRequest");
-      set({ myRequests: res.data });
+      set({ myRequests: (await api.get("/bank/getUserBankRequest")).data });
     } catch (error) {
-      console.log("error fetching bank requests", error.response?.data);
+      toast.error(errorMessage(error, "Could not load your requests."));
     } finally {
       set({ loading: false });
     }

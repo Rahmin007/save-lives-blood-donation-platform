@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useAuthStore } from "../stores/useAuthStore";
 import MapComponent from "./MapComponent";
-import Loading from "./Loading";
+import toast from "react-hot-toast";
+import { errorMessage } from "../lib/api";
 
 const UserInfo = () => {
-  const { user, updateUser, loading } = useAuthStore();
+  const { user, updateUser } = useAuthStore();
+  const [saving, setSaving] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -41,19 +43,12 @@ const UserInfo = () => {
         age: user.user.age || "",
         height: user.user.height || "",
         weight: user.user.weight || "",
-        latitude: user.user.latitude || null,
-        longitude: user.user.longitude || null,
+        latitude: null, // only sent when a new location is picked on the map
+        longitude: null,
       });
     }
   }, [user]);
 
-  if (loading) {
-    return (
-      <>
-        <Loading />
-      </>
-    );
-  }
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -76,30 +71,33 @@ const UserInfo = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSaving(true);
     try {
-      const res = await updateUser(formData);
-      setMessage("Profile updated successfully!");
-      // Optionally, you could update the form data with the new user info returned.
-      window.location.reload();
+      await updateUser(formData);
+      setMessage("");
+      setFormData((prev) => ({ ...prev, password: "" }));
+      toast.success("Profile updated.");
     } catch (error) {
-      setMessage(error.response?.data?.message || "Update failed");
+      setMessage(errorMessage(error, "Update failed."));
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen p-4">
-      <div className="bg-secondary p-6 rounded-lg shadow-lg w-full max-w-2xl">
+    <div className="flex justify-center p-2 sm:p-4">
+      <div className="bg-base-100 p-4 sm:p-6 rounded-box w-full max-w-2xl">
         {message && (
-          <p className="text-center mb-4 text-green-500">{message}</p>
+          <div role="alert" className="alert alert-error text-sm py-2 mb-4">{message}</div>
         )}
 
-        <form className="grid grid-cols-2 gap-4" onSubmit={handleSubmit}>
+        <form className="grid grid-cols-1 sm:grid-cols-2 gap-4" onSubmit={handleSubmit}>
           {/* Left Column */}
           <div className="flex flex-col gap-4">
             <input
               type="text"
               placeholder="Name"
-              className="text-black border-2 rounded-lg p-2 shadow-sm"
+              className="input input-bordered w-full"
               required
               name="name"
               value={formData.name}
@@ -108,7 +106,7 @@ const UserInfo = () => {
             <input
               type="email"
               placeholder="Email"
-              className="text-black border-2 rounded-lg p-2 shadow-sm"
+              className="input input-bordered w-full"
               required
               name="email"
               value={formData.email}
@@ -117,14 +115,14 @@ const UserInfo = () => {
             <input
               type="password"
               placeholder="New Password (leave blank to keep unchanged)"
-              className="text-black border-2 rounded-lg p-2 shadow-sm"
+              className="input input-bordered w-full"
               name="password"
               value={formData.password}
               onChange={handleChange}
             />
             <select
               name="bloodGroup"
-              className="text-black border-2 rounded-lg p-2 shadow-sm"
+              className="input input-bordered w-full"
               required
               value={formData.bloodGroup}
               onChange={handleChange}
@@ -140,12 +138,12 @@ const UserInfo = () => {
               <option value="O-">O-</option>
             </select>
 
-            <div className="flex items-center border-2 rounded-lg p-2 shadow-sm border-black">
-              <span className="text pr-2">+880</span>
+            <div className="flex items-center input input-bordered w-full">
+              <span className="pr-2 text-base-content/60">+880</span>
               <input
                 type="text"
                 placeholder="1XXXXXXXXX"
-                className="text-black flex-1 shadow-sm"
+                className="flex-1 outline-none bg-transparent"
                 required
                 name="mobile"
                 value={formData.mobile}
@@ -162,7 +160,7 @@ const UserInfo = () => {
           <div className="flex flex-col gap-4">
             <select
               name="gender"
-              className="text-black border-2 rounded-lg p-2 shadow-sm"
+              className="input input-bordered w-full"
               required
               value={formData.gender}
               onChange={handleChange}
@@ -175,7 +173,7 @@ const UserInfo = () => {
             <input
               type="number"
               placeholder="Age"
-              className="text-black border-2 rounded-lg p-2 shadow-sm"
+              className="input input-bordered w-full"
               required
               name="age"
               value={formData.age}
@@ -188,7 +186,7 @@ const UserInfo = () => {
             <input
               type="number"
               placeholder="Height (cm)"
-              className="text-black border-2 rounded-lg p-2 shadow-sm"
+              className="input input-bordered w-full"
               required
               name="height"
               value={formData.height}
@@ -205,7 +203,7 @@ const UserInfo = () => {
             <input
               type="number"
               placeholder="Weight (kg)"
-              className="text-black border-2 rounded-lg p-2 shadow-sm"
+              className="input input-bordered w-full"
               required
               name="weight"
               value={formData.weight}
@@ -221,12 +219,12 @@ const UserInfo = () => {
           </div>
 
           {/* Map Section */}
-          <div className="col-span-2 mt-6">
+          <div className="sm:col-span-2 mt-6">
             <h3
-              className="text-lg font-semibold mb-2 cursor-pointer text hover:underline"
+              className="text-base font-semibold mb-2 cursor-pointer text-primary hover:underline"
               onClick={() => setShowMap(!showMap)}
             >
-              {showMap ? "Hide Map" : "Select Your Location"}
+              {showMap ? "Hide map" : "📍 Change my location"}
             </h3>
             {showMap && (
               <div className="mt-4">
@@ -236,9 +234,9 @@ const UserInfo = () => {
           </div>
 
           {/* Submit Button */}
-          <div className="col-span-2 flex justify-center mt-6">
-            <button type="submit" className="btn w-full btn-primary">
-              Update Profile
+          <div className="sm:col-span-2 flex justify-center mt-6">
+            <button type="submit" className="btn w-full btn-primary" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
             </button>
           </div>
         </form>

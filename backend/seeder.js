@@ -1,12 +1,10 @@
-// backend/seeder.js
+// Blood bank seed data. Banks are added automatically on first start (utils/startup.js);
+// run `npm run seed:banks` to reset them manually.
 import dotenv from "dotenv";
 import mongoose from "mongoose";
-import Bank from "./models/bank.model.js";
+import { fileURLToPath } from "url";
 
-dotenv.config();
-
-// Function to generate random blood inventory
-const generateRandomBloodInventory = () => ({
+export const randomInventory = () => ({
   A_positive: Math.floor(Math.random() * 50),
   A_negative: Math.floor(Math.random() * 50),
   B_positive: Math.floor(Math.random() * 50),
@@ -17,52 +15,28 @@ const generateRandomBloodInventory = () => ({
   O_negative: Math.floor(Math.random() * 50),
 });
 
-const banks = [
-  {
-    name: "Dhaka Central Blood Bank",
-    bloodInventory: generateRandomBloodInventory(),
-    location: { latitude: 23.8103, longitude: 90.4125 },
-  },
-  {
-    name: "Bangladesh Red Crescent Blood Bank",
-    bloodInventory: generateRandomBloodInventory(),
-    location: { latitude: 23.7981, longitude: 90.4173 },
-  },
-  {
-    name: "HealthCare Blood Bank",
-    bloodInventory: generateRandomBloodInventory(),
-    location: { latitude: 23.7509, longitude: 90.3935 },
-  },
-  {
-    name: "Medix Blood Donation Center",
-    bloodInventory: generateRandomBloodInventory(),
-    location: { latitude: 23.7806, longitude: 90.4194 },
-  },
-  {
-    name: "Dhaka Medical Blood Bank",
-    bloodInventory: generateRandomBloodInventory(),
-    location: { latitude: 23.727, longitude: 90.3965 },
-  },
+export const BANKS = [
+  { name: "Dhaka Central Blood Bank", location: { latitude: 23.8103, longitude: 90.4125 } },
+  { name: "Bangladesh Red Crescent Blood Bank", location: { latitude: 23.7981, longitude: 90.4173 } },
+  { name: "HealthCare Blood Bank", location: { latitude: 23.7509, longitude: 90.3935 } },
+  { name: "Medix Blood Donation Center", location: { latitude: 23.7806, longitude: 90.4194 } },
+  { name: "Dhaka Medical Blood Bank", location: { latitude: 23.727, longitude: 90.3965 } },
 ];
 
-const seedBanks = async () => {
-  try {
-    if (!process.env.MONGO_URI) throw new Error("MONGO_URI missing");
-    await mongoose.connect(process.env.MONGO_URI);
-
-    await Bank.deleteMany({});
-    await Bank.insertMany(banks);
-
-    console.log("✅ Blood banks seeded successfully!");
-  } catch (error) {
-    console.error("❌ Seeding failed:", error);
-  } finally {
-    await mongoose.disconnect();
-    process.exit(0);
-  }
+const resetBanks = async () => {
+  dotenv.config();
+  const { default: Bank } = await import("./models/bank.model.js");
+  await mongoose.connect(process.env.MONGO_URI, { dbName: process.env.MONGO_DB_NAME || "save-lives" });
+  await Bank.deleteMany({});
+  await Bank.insertMany(BANKS.map((b) => ({ ...b, bloodInventory: randomInventory() })));
+  console.log(`Seeded ${BANKS.length} blood banks`);
+  await mongoose.disconnect();
 };
 
-// Run only if "--seed" is passed
-if (process.argv.includes("--seed")) {
-  seedBanks();
+// Only runs when executed directly: `node seeder.js --seed`
+if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes("--seed")) {
+  resetBanks().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }

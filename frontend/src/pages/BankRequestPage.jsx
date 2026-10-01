@@ -1,106 +1,66 @@
-// frontend/src/pages/BankRequestPage.jsx
 import { useState } from "react";
+import Navbar from "../components/Navbar";
 import BankMapCard from "../components/BankCard";
 import { useBankStore } from "../stores/useBankStore";
-import Navbar from "../components/Navbar";
+import { INVENTORY_KEY } from "../lib/map";
 
-const bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 const BankRequestPage = () => {
-  const { createBankRequest } = useBankStore();
-  const [selectedBank, setSelectedBank] = useState(null);
-
-  const [formData, setFormData] = useState({
-    bloodgroup: "",
-    quantity: "",
-  });
-
-  const handleInputChange = (e) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
-  };
+  const { createBankRequest, bankData, loading } = useBankStore();
+  const [bankId, setBankId] = useState("");
+  const [formData, setFormData] = useState({ bloodgroup: "", quantity: 1 });
+  const selectedBank = bankData.find((b) => b._id === bankId);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedBank) return alert("⚠️ Please select a bank from the map.");
-
-    const payload = {
-      bank: selectedBank.name,
-      bloodgroup: formData.bloodgroup,
-      quantity: formData.quantity,
-      location: selectedBank.location,
-    };
-
-    const res = await createBankRequest(payload);
-    if (res?.status === 200) {
-      alert("✅ Bank request submitted!");
-      setFormData({ bloodgroup: "", quantity: "" });
-      setSelectedBank(null);
-    }
+    const ok = await createBankRequest({ bank: bankId, bloodgroup: formData.bloodgroup, quantity: Number(formData.quantity) });
+    if (ok) setFormData({ bloodgroup: "", quantity: 1 });
   };
 
   return (
-    <>
+    <div className="min-h-screen bg-base-200">
       <Navbar />
-      <div className="p-6 max-w-4xl mx-auto">
-        {/* Map with banks */}
-        <BankMapCard onBankSelect={setSelectedBank} />
+      <main className="max-w-6xl mx-auto p-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <BankMapCard onBankSelect={(bank) => setBankId(bank._id)} />
 
-        {/* Selected bank info */}
-        {selectedBank && (
-          <div className="bg-green-100 p-4 rounded-md mt-4">
-            <p className="font-medium">
-              Selected Bank: <span className="text-red-600">{selectedBank.name}</span>
-            </p>
-            <p className="text-sm text-gray-700">
-              Location: Lat {selectedBank.location.latitude}, Lng {selectedBank.location.longitude}
-            </p>
+        <form onSubmit={handleSubmit} className="card bg-base-100 border border-base-300 p-5 space-y-4 self-start">
+          <div>
+            <h1 className="text-xl font-bold">Request blood from a bank</h1>
+            <p className="text-sm text-base-content/70">An admin reviews your request and you'll be notified.</p>
           </div>
-        )}
-
-        {/* Request form */}
-        <div className="bg-base-200 p-6 rounded-lg shadow mt-6">
-          <h2 className="text-lg font-semibold mb-4">Request Blood from Bank</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block mb-1 font-medium">Blood Group</label>
-              <select
-                name="bloodgroup"
-                className="w-full p-2 border rounded"
-                value={formData.bloodgroup}
-                onChange={handleInputChange}
-                required
-              >
-                <option value="">Select Blood Group</option>
-                {bloodGroups.map((group) => (
-                  <option key={group} value={group}>
-                    {group}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block mb-1 font-medium">Quantity (bags)</label>
-              <input
-                type="number"
-                name="quantity"
-                value={formData.quantity}
-                onChange={handleInputChange}
-                className="input input-bordered w-full"
-                min={1}
-                max={10}
-                required
-              />
-            </div>
-            <button type="submit" className="btn btn-primary w-full">
-              Submit Request
-            </button>
-          </form>
-        </div>
-      </div>
-    </>
+          <label className="form-control">
+            <span className="label-text mb-1">Blood bank</span>
+            <select className="select select-bordered w-full" value={bankId} onChange={(e) => setBankId(e.target.value)} required>
+              <option value="">Choose a bank (or tap the map)</option>
+              {bankData.map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
+            </select>
+          </label>
+          <label className="form-control">
+            <span className="label-text mb-1">Blood group</span>
+            <select className="select select-bordered w-full" value={formData.bloodgroup} required
+              onChange={(e) => setFormData((f) => ({ ...f, bloodgroup: e.target.value }))}>
+              <option value="">Choose…</option>
+              {BLOOD_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </label>
+          <label className="form-control">
+            <span className="label-text mb-1">Bags (1–10)</span>
+            <input type="number" min={1} max={10} className="input input-bordered w-full" value={formData.quantity} required
+              onChange={(e) => setFormData((f) => ({ ...f, quantity: e.target.value }))} />
+          </label>
+          {selectedBank && formData.bloodgroup && (
+            <p className="text-sm text-base-content/70">
+              In stock at {selectedBank.name}:{" "}
+              <b>{selectedBank.bloodInventory?.[INVENTORY_KEY[formData.bloodgroup]] ?? 0} bags</b>
+            </p>
+          )}
+          <button type="submit" className="btn btn-primary w-full" disabled={loading}>
+            {loading ? "Sending…" : "Send request"}
+          </button>
+        </form>
+      </main>
+    </div>
   );
 };
 

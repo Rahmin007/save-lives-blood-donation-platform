@@ -1,74 +1,51 @@
 import { create } from "zustand";
+import toast from "react-hot-toast";
+import { api, errorMessage } from "../lib/api";
 
-import axios from "axios";
-
-const axiosInstance = axios.create({
-  baseURL: "http://localhost:3000/api",
-  withCredentials: true,
-});
-
-export const useNotificationStore = create((set, get) => ({
+export const useNotificationStore = create((set) => ({
   notifications: [],
   loadingNotifications: false,
 
   getNotifications: async () => {
     set({ loadingNotifications: true });
     try {
-      const res = await axiosInstance.get("/notification/getNotifications");
+      const res = await api.get("/notification/getNotifications");
       set({ notifications: Array.isArray(res.data) ? res.data : [] });
     } catch (error) {
-      console.log("error fetching notifications", error.response?.data);
+      toast.error(errorMessage(error, "Could not load notifications."));
     } finally {
       set({ loadingNotifications: false });
     }
   },
 
+  /** Called when a live notification arrives over the socket. */
+  addNotification: (notification) =>
+    set((state) => ({ notifications: [notification, ...state.notifications] })),
+
   markAllNotificationsAsRead: async () => {
-    set({ loadingNotifications: true });
     try {
-      const res = await axiosInstance.patch(
-        "/notification/markAllNotificationsAsRead"
-      );
-      set({
-        notifications: Array.isArray(res.data) ? res.data : get().notifications,
-      });
-      get().getNotifications();
+      await api.patch("/notification/markAllNotificationsAsRead");
+      set((state) => ({ notifications: state.notifications.map((n) => ({ ...n, isRead: true })) }));
     } catch (error) {
-      console.log("error updating notifications as Read", error.response?.data);
-    } finally {
-      set({ loadingNotifications: false });
+      toast.error(errorMessage(error));
     }
   },
-  deleteSingleNotification: async (notificationId) => {
-    set({ loadingNotifications: true });
+
+  deleteSingleNotification: async (id) => {
     try {
-      const res = await axiosInstance.delete(
-        `/notification/deleteSingleNotification/${notificationId}`
-      );
-      set({
-        notifications: Array.isArray(res.data) ? res.data : get().notifications,
-      });
-      get().getNotifications();
+      await api.delete(`/notification/deleteSingleNotification/${id}`);
+      set((state) => ({ notifications: state.notifications.filter((n) => n._id !== id) }));
     } catch (error) {
-      console.log("error deleting notification", error.response?.data);
-    } finally {
-      set({ loadingNotifications: false });
+      toast.error(errorMessage(error));
     }
   },
+
   deleteAllNotification: async () => {
-    set({ loadingNotifications: true });
     try {
-      const res = await axiosInstance.delete(
-        "/notification/deleteAllNotifications"
-      );
-      set({
-        notifications: Array.isArray(res.data) ? res.data : get().notifications,
-      });
-      get().getNotifications();
+      await api.delete("/notification/deleteAllNotifications");
+      set({ notifications: [] });
     } catch (error) {
-      console.log("error deleting notification", error.response?.data);
-    } finally {
-      set({ loadingNotifications: false });
+      toast.error(errorMessage(error));
     }
   },
 }));

@@ -1,92 +1,46 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuthStore } from "../stores/useAuthStore";
-import { useBankStore } from "../stores/useBankStore";
-import Loading from "../components/Loading";
+import { useState } from "react";
 import Navbar from "../components/Navbar";
 import BankFilter from "../components/BankFilter";
 import BankMapCard from "../components/BankCard";
 import BankRequests from "../components/BankRequests";
+import BankStock from "../components/BankStock";
 import UserNotifications from "../components/UserNotifications";
+import { useBankStore } from "../stores/useBankStore";
 import { useNotificationStore } from "../stores/useNotificationStore";
+
 const AdminPage = () => {
-  const { user, checkingAuth } = useAuthStore();
-  const { fetchBankData, bankRequests, fetchBankRequests } = useBankStore();
-  const { notifications, getNotifications } = useNotificationStore();
-  const [activeTab, setActiveTab] = useState("filter");
-  const navigate = useNavigate();
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
-  const unreadRequestCount = bankRequests.filter((n) => !n.isRead).length;
+  const [activeTab, setActiveTab] = useState("requests");
+  const pending = useBankStore((s) => s.bankRequests.filter((r) => r.status === "pending").length);
+  const unread = useNotificationStore((s) => s.notifications.filter((n) => !n.isRead).length);
 
-  useEffect(() => {
-    if (!checkingAuth && user?.user?.role !== "admin") {
-      navigate("/home");
-    } else {
-      fetchBankData();
-      getNotifications();
-      fetchBankRequests();
-    }
-  }, [checkingAuth, user]);
-
-  if (checkingAuth || !user) return <Loading />;
+  const tabs = [
+    { id: "requests", label: "Requests", badge: pending },
+    { id: "stock", label: "Stock" },
+    { id: "filter", label: "Search banks" },
+    { id: "map", label: "Map" },
+    { id: "notifications", label: "Notifications", badge: unread },
+  ];
 
   return (
-    <div>
+    <div className="min-h-screen bg-base-200">
       <Navbar />
-      <hr />
-      <div className="p-4">
-        <h1 className="text-2xl font-bold mb-4">Admin Dashboard</h1>
-
-        {/* Tabs */}
-        <div role="tablist" className="tabs tabs-bordered mb-6">
-          <a
-            role="tab"
-            className={`tab ${activeTab === "filter" ? "tab-active" : ""}`}
-            onClick={() => setActiveTab("filter")}
-          >
-            Filter
-          </a>
-          <a
-            role="tab"
-            className={`tab ${activeTab === "map" ? "tab-active" : ""}`}
-            onClick={() => setActiveTab("map")}
-          >
-            Map
-          </a>
-          <a
-            role="tab"
-            className={`tab ${activeTab === "requests" ? "tab-active" : ""}`}
-            onClick={() => setActiveTab("requests")}
-          >
-            Requests
-            {unreadRequestCount > 0 && (
-              <div className="badge badge-xs badge-secondary ml-1 rounded ">
-                {unreadRequestCount}
-              </div>
-            )}
-          </a>
-          <a
-            role="tab"
-            className={`tab ${
-              activeTab === "notifications" ? "tab-active" : ""
-            }`}
-            onClick={() => setActiveTab("notifications")}
-          >
-            Notifications
-            {unreadCount > 0 && (
-              <div className="badge badge-xs badge-secondary ml-1 rounded ">
-                {unreadCount}
-              </div>
-            )}
-          </a>
+      <main className="max-w-6xl mx-auto p-4 space-y-4">
+        <h1 className="text-2xl font-bold">Admin dashboard</h1>
+        <div role="tablist" className="tabs tabs-box overflow-x-auto flex-nowrap">
+          {tabs.map((t) => (
+            <button key={t.id} role="tab" aria-selected={activeTab === t.id}
+              className={`tab whitespace-nowrap ${activeTab === t.id ? "tab-active" : ""}`} onClick={() => setActiveTab(t.id)}>
+              {t.label}
+              {t.badge > 0 && <span className="badge badge-primary badge-xs ml-1">{t.badge}</span>}
+            </button>
+          ))}
         </div>
-
-        {/* Tab content */}
+        {activeTab === "requests" && <BankRequests />}
+        {activeTab === "stock" && <BankStock />}
         {activeTab === "filter" && <BankFilter />}
         {activeTab === "map" && <BankMapCard />}
-        {activeTab === "requests" && <BankRequests />}
-        {activeTab === "notifications" && <UserNotifications />}
-      </div>
+        {activeTab === "notifications" && <div className="card bg-base-100 border border-base-300 p-4"><UserNotifications /></div>}
+      </main>
     </div>
   );
 };

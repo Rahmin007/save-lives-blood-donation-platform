@@ -15,9 +15,13 @@ const messageSchema = new mongoose.Schema(
     text: {
       type: String,
       required: true,
+      trim: true,
+      maxlength: 1000,
     },
   },
   { timestamps: true }
 );
+
+messageSchema.index({ sender: 1, receiver: 1, createdAt: 1 });
 
 export default mongoose.model("Message", messageSchema);

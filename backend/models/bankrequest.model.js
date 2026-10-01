@@ -9,6 +9,8 @@ const bankRequestSchema = new mongoose.Schema(
     },
     user: {
       type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
     },
     bloodgroup: {
       type: String,
@@ -18,6 +20,8 @@ const bankRequestSchema = new mongoose.Schema(
     quantity: {
       type: Number,
       required: true,
+      min: 1,
+      max: 10,
     },
     location: {
       latitude: { type: Number, required: true },

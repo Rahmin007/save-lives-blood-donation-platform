@@ -1,5 +1,9 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useBankStore } from "../stores/useBankStore";
+import { formatDateTime } from "../lib/format";
+import Loading from "./Loading";
+
+const BADGE = { pending: "badge-warning", accepted: "badge-success", rejected: "badge-error" };
 
 const UserBankRequest = () => {
   const { myRequests, loading, getUserBankRequests } = useBankStore();
@@ -8,51 +12,21 @@ const UserBankRequest = () => {
     getUserBankRequests();
   }, [getUserBankRequests]);
 
-  if (loading) return <p>Loading your bank requests...</p>;
+  if (loading && !myRequests.length) return <Loading fullScreen={false} />;
+  if (!myRequests.length) return <p className="text-center text-base-content/60 py-8">You haven't requested blood from a bank yet.</p>;
 
   return (
-    <div className="p-4">
-      <h2 className="text-xl font-bold mb-4">My Bank Requests</h2>
-      {myRequests.length === 0 ? (
-        <p>No requests found.</p>
-      ) : (
-        <ul className="space-y-4">
-          {myRequests.map((request) => (
-            <li
-              key={request._id}
-              className="p-4 border rounded shadow-md bg-white"
-            >
-              <p>
-                <strong>Bank:</strong> {request.bank.name}
-              </p>
-              <p>
-                <strong>Blood Group:</strong> {request.bloodgroup}
-              </p>
-              <p>
-                <strong>Quantity:</strong> {request.quantity} units
-              </p>
-              <p>
-                <strong>Status:</strong>{" "}
-                <span
-                  className={
-                    request.status === "pending"
-                      ? "text-yellow-500"
-                      : request.status === "accepted"
-                      ? "text-green-600"
-                      : "text-red-500"
-                  }
-                >
-                  {request.status}
-                </span>
-              </p>
-              <p className="text-sm text-gray-500">
-                Requested at: {new Date(request.createdAt).toLocaleString()}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <ul className="space-y-3">
+      {myRequests.map((r) => (
+        <li key={r._id} className="border border-base-300 rounded-box p-4 flex flex-wrap items-center gap-3 justify-between">
+          <div>
+            <p className="font-semibold">{r.bloodgroup} · {r.quantity} bag{r.quantity > 1 ? "s" : ""} from {r.bank?.name ?? "a blood bank"}</p>
+            <p className="text-sm text-base-content/60">{formatDateTime(r.createdAt)}</p>
+          </div>
+          <span className={`badge ${BADGE[r.status]}`}>{r.status}</span>
+        </li>
+      ))}
+    </ul>
   );
 };
 

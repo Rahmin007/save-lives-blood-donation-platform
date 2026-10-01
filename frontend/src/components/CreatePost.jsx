@@ -14,7 +14,7 @@ const bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const urgencyLevels = ["Low", "Medium", "High"];
 
 const CreatePost = () => {
-  const { createPost, loadingPosts } = usePostStore();
+  const { createPost, submitting } = usePostStore();
 
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState({
@@ -52,13 +52,14 @@ const CreatePost = () => {
           return false;
         }
         break;
-      case 2:
+      case 2: {
         const quantity = Number(formData.quantity);
         if (!quantity || isNaN(quantity) || quantity < 1 || quantity > 10) {
           setError("Enter a quantity between 1 and 10.");
           return false;
         }
         break;
+      }
 
       case 3:
         if (
@@ -84,9 +85,8 @@ const CreatePost = () => {
 
   const handleSubmit = async () => {
     if (!validateStep()) return;
-    console.log("Submitting post:", formData);
-    await createPost(formData);
-    // Optionally reset the form or redirect
+    // Only clear the form when the post was actually saved.
+    if (!(await createPost(formData))) return;
     setFormData({
       description: "",
       bloodGroup: "",
@@ -103,24 +103,28 @@ const CreatePost = () => {
   };
 
   return (
-    <div className="w-full mx-auto mt-8 p-6 border rounded shadow bg-base-100 space-y-4">
-      <h2 className=" text-xl font-bold text-center">Create a New Post</h2>
+    <div className="card bg-base-100 border border-base-300 p-5 sm:p-6 space-y-4">
+      <div>
+        <h2 className="text-xl font-bold">Need blood? Post a request</h2>
+        <p className="text-sm text-base-content/70">Donors nearby with a matching blood group are notified instantly.</p>
+      </div>
 
       {/* Progress Bar */}
-      <div className="w-full bg-gray-200 rounded-full h-3">
+      <div className="w-full bg-base-300 rounded-full h-2" role="progressbar" aria-valuemin={1} aria-valuemax={steps.length} aria-valuenow={step + 1}>
         <div
-          className="bg-success h-3 rounded-full"
+          className="bg-primary h-2 rounded-full transition-all"
           style={{ width: `${((step + 1) / steps.length) * 100}%` }}
         ></div>
       </div>
-      <p className="text-sm text-center font-medium">{steps[step]}</p>
+      <p className="text-sm font-medium">Step {step + 1} of {steps.length}: {steps[step]}</p>
 
       {/* Step Content */}
       <div>
         {step === 0 && (
           <textarea
-            className="w-full p-2 border rounded"
+            className="textarea textarea-bordered w-full"
             rows="4"
+            maxLength={1000}
             placeholder="Describe your situation..."
             value={formData.description}
             onChange={(e) => updateField("description", e.target.value)}
@@ -129,15 +133,15 @@ const CreatePost = () => {
 
         {step === 1 && (
           <select
-            className="w-full p-2 border rounded"
+            className="select select-bordered w-full"
             value={formData.bloodGroup}
             onChange={(e) => updateField("bloodGroup", e.target.value)}
           >
-            <option value="" className="text-black">
+            <option value="">
               Select Blood Group
             </option>
             {bloodGroups.map((group) => (
-              <option key={group} value={group} className="text-black">
+              <option key={group} value={group}>
                 {group}
               </option>
             ))}
@@ -147,7 +151,7 @@ const CreatePost = () => {
         {step === 2 && (
           <input
             type="number"
-            className="w-full p-2 border rounded"
+            className="input input-bordered w-full"
             placeholder="Number of bags required (1-10)"
             min={1}
             max={10}
@@ -166,15 +170,15 @@ const CreatePost = () => {
 
         {step === 4 && (
           <select
-            className="w-full p-2 border rounded"
+            className="select select-bordered w-full"
             value={formData.urgency}
             onChange={(e) => updateField("urgency", e.target.value)}
           >
-            <option value="" className="text-black">
+            <option value="">
               Select Urgency
             </option>
             {urgencyLevels.map((level) => (
-              <option key={level} value={level} className="text-black">
+              <option key={level} value={level}>
                 {level}
               </option>
             ))}
@@ -183,14 +187,14 @@ const CreatePost = () => {
       </div>
 
       {/* Error message */}
-      {error && <p className="text-red-500 text-sm">{error}</p>}
+      {error && <p className="text-error text-sm" role="alert">{error}</p>}
 
       {/* Buttons */}
       <div className="flex justify-between">
         <button
           onClick={prevStep}
           disabled={step === 0}
-          className="px-4 py-2 btn btn-neutral"
+          className="btn btn-ghost"
         >
           Previous
         </button>
@@ -198,13 +202,13 @@ const CreatePost = () => {
         {step === steps.length - 1 ? (
           <button
             onClick={handleSubmit}
-            disabled={loadingPosts}
-            className="btn btn-neutral"
+            disabled={submitting}
+            className="btn btn-primary"
           >
-            {loadingPosts ? "Submitting..." : "Submit"}
+            {submitting ? "Posting…" : "Post request"}
           </button>
         ) : (
-          <button onClick={nextStep} className="btn btn-neutral">
+          <button onClick={nextStep} className="btn btn-primary">
             Next
           </button>
         )}

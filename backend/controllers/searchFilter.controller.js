@@ -1,156 +1,64 @@
 import Bank from "../models/bank.model.js";
 import User from "../models/user.model.js";
 import Post from "../models/post.model.js";
+import { INVENTORY_KEY } from "./bank.controller.js";
+import { BLOOD_GROUPS, URGENCY_LEVELS, fail, validCoords } from "../utils/http.js";
 
-//hjb
+const URGENCY_RANK = { High: 0, Medium: 1, Low: 2 };
+
+/** Every bank's stock for one blood group. */
 export const filterBanksByBloodGroup = async (req, res) => {
-  try {
-    const { bloodgroup } = req.query;
-
-    if (!bloodgroup) {
-      return res.status(400).json({ message: "Blood group is required" });
-    }
-
-    const bloodgroupmap = {
-      "A+": "A_positive",
-      "A-": "A_negative",
-      "B+": "B_positive",
-      "B-": "B_negative",
-      "AB+": "AB_positive",
-      "AB-": "AB_negative",
-      "O+": "O_positive",
-      "O-": "O_negative",
-    };
-
-    const key = bloodgroupmap[bloodgroup];
-
-    if (!key) {
-      return res.status(400).json({ message: "Invalid blood group" });
-    }
-
-    // Fetch all banks, including those with 0 quantity
-    const banks = await Bank.find(
-      {},
-      { name: 1, location: 1, [`bloodInventory.${key}`]: 1 }
-    );
-
-    return res.status(200).json({
-      message: "Banks found",
-      bloodgroup: bloodgroup, // Include searched blood group for clarity
-      banks: banks.map((bank) => ({
-        _id: bank._id,
-        name: bank.name,
-        location: bank.location,
-        quantity: bank.bloodInventory[key] || 0, // Ensure 0 if undefined
-      })),
-    });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Failed to fetch banks", error: error.message });
-  }
+  const { bloodgroup } = req.query;
+  const key = INVENTORY_KEY[bloodgroup];
+  if (!key) return fail(res, 400, "Please choose a valid blood group.");
+  const banks = await Bank.find({}, { name: 1, location: 1, [`bloodInventory.${key}`]: 1 }).sort({ name: 1 });
+  res.json({
+    bloodgroup,
+    banks: banks.map((b) => ({ _id: b._id, name: b.name, location: b.location, quantity: b.bloodInventory?.[key] ?? 0 })),
+  });
 };
 
-//raz
+/** Donors with a blood group, optionally within maxDistance metres of a point (nearest first). */
 export const filterDonors = async (req, res) => {
-  try {
-    const { bloodgroup, longitude, latitude, maxDistance } = req.query;
+  const { bloodgroup, longitude, latitude, maxDistance } = req.query;
+  if (!BLOOD_GROUPS.includes(bloodgroup)) return fail(res, 400, "Please choose a valid blood group.");
 
-    if (!bloodgroup) {
-      return res.status(400).json({ message: "Blood group is required" });
-    }
-
-    let query = { bloodGroup: bloodgroup }; // Fix: Match the field name exactly
-
-    if (longitude && latitude) {
-      query.location = {
-        $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [parseFloat(longitude), parseFloat(latitude)],
-          },
-          $maxDistance: maxDistance ? parseInt(maxDistance) : 5000, // Default: 5km
-        },
-      };
-    }
-
-    const donors = await User.find(query, {
-      name: 1,
-      mobile: 1,
-      location: 1,
-      bloodGroup: 1,
-    });
-
-    // 🔹 Handle case: No matching donors found
-    if (!donors.length) {
-      return res.status(404).json({
-        message: "No donors found for the given blood group and location",
-        bloodgroup,
-      });
-    }
-
-    return res.status(200).json({
-      message: "Donors found",
-      bloodgroup,
-      donors,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to fetch donors",
-      error: error.message,
-    });
+  const query = { bloodGroup: bloodgroup, _id: { $ne: req.user._id } };
+  if (latitude !== undefined && longitude !== undefined) {
+    if (!validCoords(latitude, longitude)) return fail(res, 400, "Invalid location.");
+    const metres = Math.min(Math.max(Number(maxDistance) || 5000, 500), 50000); // 0.5–50 km
+    query.location = {
+      $near: {
+        $geometry: { type: "Point", coordinates: [Number(longitude), Number(latitude)] },
+        $maxDistance: metres,
+      },
+    };
   }
+  const donors = await User.find(query, { name: 1, mobile: 1, location: 1, bloodGroup: 1 }).limit(50);
+  // An empty result is a normal answer, not an error.
+  res.json({ bloodgroup, donors });
 };
 
-//ar
+/** Feed filter by urgency and/or time. Cancelled posts are never included. */
 export const filterPosts = async (req, res) => {
-  try {
-    const { urgency, time } = req.query;
+  const { urgency, time } = req.query;
+  const filter = { canceled: false };
 
-    let filter = {};
-
-    if (urgency) {
-      if (["High", "Medium", "Low"].includes(urgency)) {
-        filter.urgency = urgency;
-      } else {
-        return res.status(400).json({ message: "Invalid urgency" });
-      }
-    }
-
-    if (time) {
-      let startDate;
-
-      const now = new Date();
-
-      if (time === "today") {
-        startDate = new Date(now.setHours(0, 0, 0, 0));
-      } else if (time === "1 week") {
-        startDate = new Date(now.setDate(now.getDate() - 7));
-      } else if (time === "1 month") {
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
-      } else {
-        return res.status(400).json({ message: "Invalid time" });
-      }
-
-      filter.createdAt = { $gte: startDate };
-    }
-
-    const posts = await Post.find(filter)
-      .sort({ urgency: 1, createdAt: -1 })
-      .populate("user", "name");
-    if (posts.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "Sorry, no posts found in this category." });
-    }
-
-    return res.status(200).json({
-      message: "Posts found",
-      posts,
-    });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Failed to fetch posts", error: error.message });
+  if (urgency) {
+    if (!URGENCY_LEVELS.includes(urgency)) return fail(res, 400, "Invalid urgency.");
+    filter.urgency = urgency;
   }
+  if (time) {
+    const start = new Date();
+    if (time === "today") start.setHours(0, 0, 0, 0);
+    else if (time === "1 week") start.setDate(start.getDate() - 7);
+    else if (time === "1 month") start.setMonth(start.getMonth() - 1);
+    else return fail(res, 400, "Invalid time range.");
+    filter.createdAt = { $gte: start };
+  }
+
+  const posts = await Post.find(filter).sort({ createdAt: -1 }).limit(200).populate("user", "name bloodGroup");
+  // Sort High → Medium → Low (a plain string sort gave High, Low, Medium).
+  posts.sort((a, b) => URGENCY_RANK[a.urgency] - URGENCY_RANK[b.urgency] || b.createdAt - a.createdAt);
+  res.json({ posts });
 };

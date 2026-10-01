@@ -1,105 +1,85 @@
-import React, { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { Menu, X, Droplet, Bell } from "lucide-react";
 import { useAuthStore } from "../stores/useAuthStore";
-import { Menu, X } from "lucide-react";
+import { useNotificationStore } from "../stores/useNotificationStore";
 
 const Navbar = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const { logout, user } = useAuthStore();
+  const { notifications, getNotifications } = useNotificationStore();
   const isAdmin = user?.user?.role === "admin";
   const [menuOpen, setMenuOpen] = useState(false);
+  const unread = notifications.filter((n) => !n.isRead).length;
+
+  useEffect(() => {
+    getNotifications();
+  }, [getNotifications]);
 
   const handleLogout = async () => {
-    try {
-      await logout();
-      setTimeout(() => {
-        navigate("/");
-      }, 2000);
-    } catch (error) {
-      console.log("logout failed", error.response?.data);
-    }
+    await logout();
+    navigate("/");
   };
 
-  const isActive = (path) => location.pathname === path;
+  const links = [
+    ...(!isAdmin ? [{ to: "/home", label: "Home" }, { to: "/bankrequest", label: "Blood banks" }] : []),
+    { to: "/messagepage", label: "Messages" },
+    { to: "/profile", label: "Profile" },
+    ...(isAdmin ? [{ to: "/adminpage", label: "Admin panel" }] : []),
+  ];
 
-  const NavButton = ({ to, label, extraClass = "" }) => (
-    <button
-      onClick={() => {
-        navigate(to);
-        setMenuOpen(false);
-      }}
-      className={`btn w-full md:w-auto ${
-        isActive(to) ? "btn-primary" : "btn-neutral"
-      } ${extraClass}`}
-    >
-      {label}
-    </button>
-  );
+  const linkClass = ({ isActive }) =>
+    `btn btn-sm md:btn-md w-full md:w-auto ${isActive ? "btn-primary" : "btn-ghost"}`;
 
   return (
-    <div className="navbar w-full bg-base-200 shadow-md p-4">
-      <div className="w-full flex justify-between items-center">
-        {/* Left: Logo or Title */}
-        <div className="text-xl font-bold">Save Lives</div>
+    <header className="sticky top-0 z-[1000] bg-base-100/95 backdrop-blur border-b border-base-300">
+      <nav className="navbar max-w-7xl mx-auto px-4" aria-label="Main">
+        <div className="flex-1">
+          <NavLink to={isAdmin ? "/adminpage" : "/home"} className="flex items-center gap-2 text-xl font-bold text-primary">
+            <Droplet className="fill-primary" size={26} aria-hidden="true" />
+            Save Lives
+          </NavLink>
+        </div>
 
-        {/* Mobile toggle button */}
-        <div className="md:hidden">
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="btn btn-ghost"
-          >
-            {menuOpen ? <X /> : <Menu />}
+        <div className="hidden md:flex items-center gap-1">
+          {links.map((l) => (
+            <NavLink key={l.to} to={l.to} className={linkClass}>
+              {l.label}
+            </NavLink>
+          ))}
+          <NavLink to="/profile" state={{ tab: "notifications" }} className="btn btn-ghost btn-circle relative" aria-label={`Notifications, ${unread} unread`}>
+            <Bell size={20} />
+            {unread > 0 && <span className="badge badge-primary badge-xs absolute top-1 right-1">{unread}</span>}
+          </NavLink>
+          <button onClick={handleLogout} className="btn btn-outline btn-sm md:btn-md ml-2">
+            Log out
           </button>
         </div>
 
-        {/* Desktop Nav */}
-        <div className="hidden md:flex space-x-4 items-center">
-          {!isAdmin && (
-            <>
-              <NavButton to="/home" label="Home" />
-              <NavButton to="/bankrequest" label="Bank request" />
-            </>
-          )}
-          <NavButton to="/messagepage" label="Messages" />
-          <NavButton to="/profile" label="Profile" />
-          {isAdmin && (
-            <NavButton
-              to="/adminpage"
-              label="Admin Panel"
-              extraClass="btn-warning"
-            />
-          )}
-          <button onClick={handleLogout} className="btn btn-neutral">
-            Logout
-          </button>
-        </div>
-      </div>
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          className="btn btn-ghost md:hidden"
+          aria-expanded={menuOpen}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+        >
+          {menuOpen ? <X /> : <Menu />}
+          {!menuOpen && unread > 0 && <span className="badge badge-primary badge-xs">{unread}</span>}
+        </button>
+      </nav>
 
-      {/* Mobile dropdown menu */}
       {menuOpen && (
-        <div className="flex flex-col space-y-2 mt-4 md:hidden">
-          {!isAdmin && (
-            <>
-              <NavButton to="/home" label="Home" />
-              <NavButton to="/bankrequest" label="Bank request" />
-            </>
-          )}
-          <NavButton to="/messagepage" label="Messages" />
-          <NavButton to="/profile" label="Profile" />
-          {isAdmin && (
-            <NavButton
-              to="/adminpage"
-              label="Admin Panel"
-              extraClass="btn-warning"
-            />
-          )}
-          <button onClick={handleLogout} className="btn btn-neutral">
-            Logout
+        <div className="md:hidden flex flex-col gap-2 px-4 pb-4">
+          {links.map((l) => (
+            <NavLink key={l.to} to={l.to} className={linkClass} onClick={() => setMenuOpen(false)}>
+              {l.label}
+            </NavLink>
+          ))}
+          <button onClick={handleLogout} className="btn btn-outline w-full">
+            Log out
           </button>
         </div>
       )}
-    </div>
+    </header>
   );
 };
 

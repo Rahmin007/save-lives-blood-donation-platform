@@ -2,37 +2,42 @@
 @import "leaflet/dist/leaflet.css";
 @plugin "daisyui";
 
+/* Light, high-contrast theme: blood-red primary on clean neutral backgrounds. */
 @plugin "daisyui/theme" {
-  name: "valentine";
-  default: false;
+  name: "savelives";
+  default: true;
   prefersdark: false;
-  color-scheme: "dark";
-  --color-base-100: oklch(27% 0.105 12.094);
-  --color-base-200: oklch(41% 0.159 10.272);
-  --color-base-300: oklch(45% 0.188 13.697);
-  --color-base-content: oklch(94% 0.03 12.58);
-  --color-primary: oklch(70% 0.14 182.503);
-  --color-primary-content: oklch(98% 0.014 180.72);
-  --color-secondary: oklch(55% 0.027 264.364);
-  --color-secondary-content: oklch(98% 0.002 247.839);
-  --color-accent: oklch(62% 0.214 259.815);
-  --color-accent-content: oklch(97% 0.014 254.604);
-  --color-neutral: oklch(58% 0.253 17.585);
-  --color-neutral-content: oklch(96% 0.015 12.422);
-  --color-info: oklch(68% 0.169 237.323);
-  --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(76% 0.233 130.85);
-  --color-success-content: oklch(98% 0.031 120.757);
-  --color-warning: oklch(76% 0.188 70.08);
-  --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(65% 0.241 354.308);
-  --color-error-content: oklch(97% 0.014 343.198);
-  --radius-selector: 0rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.25rem;
+  color-scheme: "light";
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(97.5% 0.006 17);
+  --color-base-300: oklch(92% 0.012 17);
+  --color-base-content: oklch(25% 0.02 17);
+  --color-primary: oklch(52% 0.2 25);
+  --color-primary-content: oklch(99% 0.005 25);
+  --color-secondary: oklch(45% 0.03 260);
+  --color-secondary-content: oklch(98% 0.003 260);
+  --color-accent: oklch(60% 0.15 200);
+  --color-accent-content: oklch(98% 0.01 200);
+  --color-neutral: oklch(32% 0.02 260);
+  --color-neutral-content: oklch(97% 0.005 260);
+  --color-info: oklch(62% 0.15 240);
+  --color-info-content: oklch(98% 0.01 240);
+  --color-success: oklch(58% 0.15 150);
+  --color-success-content: oklch(98% 0.02 150);
+  --color-warning: oklch(78% 0.16 75);
+  --color-warning-content: oklch(28% 0.05 75);
+  --color-error: oklch(55% 0.22 25);
+  --color-error-content: oklch(98% 0.01 25);
+  --radius-selector: 1rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
-  --border: 1.5px;
+  --border: 1px;
   --depth: 1;
-  --noise: 1;
+  --noise: 0;
 }
+
+/* Keep Leaflet maps below the sticky navbar and dialogs. */
+.leaflet-container { z-index: 0; border-radius: 0.5rem; }
+.leaflet-pane, .leaflet-top, .leaflet-bottom { z-index: 400; }

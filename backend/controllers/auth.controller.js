@@ -1,256 +1,166 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
+import { BLOOD_GROUPS, fail, validCoords } from "../utils/http.js";
+import { adminEmails } from "../utils/startup.js";
+
+const ACCESS_MS = 30 * 60 * 1000; // 30 minutes
+const REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 // -------- helpers --------
-const generateTokens = (user) => {
-  const accessToken = jwt.sign(
-    { id: user._id },
-    process.env.JWT_ACCESS_SECRET,
-    { expiresIn: "30m" }
-  );
+const signAccess = (user) => jwt.sign({ id: user._id }, process.env.JWT_ACCESS_SECRET, { expiresIn: "30m" });
+const signRefresh = (user) => jwt.sign({ id: user._id }, process.env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
-  const refreshToken = jwt.sign(
-    { id: user._id },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "1d" }
-  );
-
-  return { accessToken, refreshToken };
-};
-
-const cookieOpts = (maxAgeMs) => {
+const cookieOpts = (maxAge) => {
   const isProd = process.env.NODE_ENV === "production";
-  return {
-    httpOnly: true,
-    secure: isProd,                         // 🔑 false in dev (HTTP), true in prod (HTTPS)
-    sameSite: isProd ? "strict" : "lax",    // 🔑 lax in dev to allow cross-origin (different port)
-    path: "/",
-    maxAge: maxAgeMs,
-  };
+  // Frontend and API share one domain in production, so "lax" + secure works everywhere.
+  return { httpOnly: true, secure: isProd, sameSite: "lax", path: "/", ...(maxAge ? { maxAge } : {}) };
 };
 
-const clearCookieOpts = () => {
-  const isProd = process.env.NODE_ENV === "production";
-  return {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "strict" : "lax",
-    path: "/",
-  };
+const setCookies = (res, user) => {
+  res.cookie("accessToken", signAccess(user), cookieOpts(ACCESS_MS));
+  res.cookie("refreshToken", signRefresh(user), cookieOpts(REFRESH_MS));
 };
 
-const setCookies = (res, accessToken, refreshToken) => {
-  res.cookie("accessToken", accessToken, cookieOpts(30 * 60 * 1000));      // 30m
-  res.cookie("refreshToken", refreshToken, cookieOpts(24 * 60 * 60 * 1000)); // 1d
-};
+/** The profile fields that are safe to send to the browser (no password hash). */
+const publicUser = (user) => user.toJSON();
 
-// -------- TEST ONLY - remove before production --------
-export const createTestUser = async (req, res) => {
-  try {
-    await User.deleteOne({ email: "test@test.com" });
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash("password123", salt);
-    await User.create({
-      name: "Test User",
-      email: "test@test.com",
-      password: hashedPassword,
-      bloodGroup: "A+",
-      mobile: 1711111111,
-      gender: "male",
-      age: 22,
-      weight: 70,
-      height: 170,
-      location: { type: "Point", coordinates: [90.4125, 23.8103] },
-    });
-    res.json({ message: "Test user created. Email: test@test.com | Password: password123" });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+/** Validates sign-up / profile data. `partial` allows missing fields (profile edits). */
+const validateProfile = (data, { partial = false } = {}) => {
+  const has = (key) => data[key] !== undefined && data[key] !== null && data[key] !== "";
+  const need = (key) => !partial || has(key);
+
+  if (need("name") && String(data.name ?? "").trim().length < 2) return "Please enter your name.";
+  if (need("email") && !EMAIL_RE.test(String(data.email ?? "").trim())) return "Please enter a valid email address.";
+  if ((!partial || has("password")) && String(data.password ?? "").length < 6) return "Password must be at least 6 characters.";
+  if (need("bloodGroup") && !BLOOD_GROUPS.includes(data.bloodGroup)) return "Please choose a valid blood group.";
+  if (need("gender") && !["male", "female"].includes(data.gender)) return "Please choose a gender.";
+  if (need("mobile") && !/^1\d{9}$/.test(String(data.mobile ?? ""))) return "Mobile number must be 10 digits starting with 1 (after +880).";
+  if (need("age") && !(Number(data.age) >= 18 && Number(data.age) <= 65)) return "Donors must be between 18 and 65 years old.";
+  if (need("weight") && !(Number(data.weight) >= 30 && Number(data.weight) <= 250)) return "Please enter a valid weight in kg.";
+  if (need("height") && !(Number(data.height) >= 100 && Number(data.height) <= 250)) return "Please enter a valid height in cm.";
+  if ((!partial || has("latitude") || has("longitude")) && !validCoords(data.latitude, data.longitude)) return "Please choose a valid location.";
+  return null;
 };
 
 // -------- controllers --------
 export const signup = async (req, res) => {
+  const error = validateProfile(req.body);
+  if (error) return fail(res, 400, error);
+
+  const { name, password, bloodGroup, mobile, gender, age, weight, height, latitude, longitude } = req.body;
+  const email = String(req.body.email).trim().toLowerCase();
   try {
-    const {
-      name, email, password, bloodGroup, mobile, gender,
-      age, weight, height, latitude, longitude,
-    } = req.body;
+    if (await User.exists({ email })) return fail(res, 409, "An account with this email already exists.");
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ message: "User already exists" });
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    const newUser = await User.create({
-      name,
+    const user = await User.create({
+      name: String(name).trim(),
       email,
-      password: hashedPassword,
+      password: await bcrypt.hash(password, 10),
       bloodGroup,
-      mobile,
+      mobile: Number(mobile),
       gender,
-      age,
-      weight,
-      height,
-      location: {
-        type: "Point",
-        coordinates: [longitude, latitude],
-      },
+      age: Number(age),
+      weight: Number(weight),
+      height: Number(height),
+      role: adminEmails().includes(email) ? "admin" : "user",
+      location: { type: "Point", coordinates: [Number(longitude), Number(latitude)] },
     });
 
-    const { accessToken, refreshToken } = generateTokens(newUser);
-    setCookies(res, accessToken, refreshToken);
-
-    res.status(201).json({
-      message: "User created successfully",
-      _id: newUser._id,
-      name: newUser.name,
-      email: newUser.email,
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Signup failed", error: error.message });
+    setCookies(res, user);
+    res.status(201).json({ message: "Account created", user: publicUser(user) });
+  } catch (err) {
+    console.error("signup", err);
+    fail(res, 500, "Sign-up failed. Please try again.");
   }
 };
 
 export const login = async (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const password = String(req.body.password || "");
+  if (!email || !password) return fail(res, 400, "Please enter your email and password.");
   try {
-    const { email, password } = req.body;
-
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
-
-    const { accessToken, refreshToken } = generateTokens(user);
-    setCookies(res, accessToken, refreshToken);
-
-    res.status(200).json({
-      message: "Login successful",
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Login failed", error: error.message });
+    // Same message for "no account" and "wrong password", so emails can't be probed.
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return fail(res, 401, "Incorrect email or password.");
+    }
+    setCookies(res, user);
+    res.json({ message: "Login successful", user: publicUser(user) });
+  } catch (err) {
+    console.error("login", err);
+    fail(res, 500, "Login failed. Please try again.");
   }
 };
 
-export const logout = async (_req, res) => {
-  try {
-    res.clearCookie("refreshToken", clearCookieOpts());
-    res.clearCookie("accessToken", clearCookieOpts());
-    res.status(200).json({ message: "Logged out successfully" });
-  } catch (error) {
-    res.status(500).json({ message: "Logout failed", error: error.message });
-  }
+export const logout = (_req, res) => {
+  res.clearCookie("accessToken", cookieOpts());
+  res.clearCookie("refreshToken", cookieOpts());
+  res.json({ message: "Logged out" });
 };
 
-export const getUserProfile = async (req, res) => {
-  try {
-    res.status(200).json({ user: req.user });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to get user profile", error: error.message });
-  }
-};
+export const getUserProfile = (req, res) => res.json({ user: req.user });
 
+/** Admin only: every account, without password hashes. */
 export const getAllUser = async (_req, res) => {
-  try {
-    const users = await User.find();
-    res.status(200).json(users);
-  } catch (error) {
-    res.status(500).json({ message: "Failed to get users", error: error.message });
-  }
+  const users = await User.find().select("-password").sort({ createdAt: -1 });
+  res.json(users);
 };
 
 export const updateUser = async (req, res) => {
+  const error = validateProfile(req.body, { partial: true });
+  if (error) return fail(res, 400, error);
   try {
-    const userId = req.user.id;
-    const {
-      name, email, password, bloodGroup, mobile, gender,
-      age, weight, height, latitude, longitude,
-    } = req.body;
+    const user = await User.findById(req.user._id);
+    if (!user) return fail(res, 404, "User not found.");
 
-    let user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    let hashedPassword = user.password;
-    if (password) {
-      const salt = await bcrypt.genSalt(10);
-      hashedPassword = await bcrypt.hash(password, salt);
+    const { name, password, bloodGroup, mobile, gender, age, weight, height, latitude, longitude } = req.body;
+    if (req.body.email) {
+      const email = String(req.body.email).trim().toLowerCase();
+      if (email !== user.email && (await User.exists({ email }))) {
+        return fail(res, 409, "That email is already used by another account.");
+      }
+      user.email = email;
     }
-
-    user.name = name ?? user.name;
-    user.email = email ?? user.email;
-    user.password = hashedPassword;
-    user.bloodGroup = bloodGroup ?? user.bloodGroup;
-    user.mobile = mobile ?? user.mobile;
-    user.gender = gender ?? user.gender;
-    user.age = age ?? user.age;
-    user.weight = weight ?? user.weight;
-    user.height = height ?? user.height;
-
-    if (latitude != null && longitude != null) {
-      user.location = { type: "Point", coordinates: [longitude, latitude] };
+    if (name) user.name = String(name).trim();
+    if (password) user.password = await bcrypt.hash(password, 10);
+    if (bloodGroup) user.bloodGroup = bloodGroup;
+    if (mobile) user.mobile = Number(mobile);
+    if (gender) user.gender = gender;
+    if (age) user.age = Number(age);
+    if (weight) user.weight = Number(weight);
+    if (height) user.height = Number(height);
+    if (validCoords(latitude, longitude)) {
+      user.location = { type: "Point", coordinates: [Number(longitude), Number(latitude)] };
     }
 
     await user.save();
-    res.json({ message: "Profile updated successfully", user });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to update user", error: error.message });
+    res.json({ message: "Profile updated", user: publicUser(user) });
+  } catch (err) {
+    console.error("updateUser", err);
+    fail(res, 500, "Could not update your profile.");
   }
 };
 
 export const refreshAccessToken = async (req, res) => {
+  const token = req.cookies?.refreshToken;
+  if (!token) return fail(res, 401, "Please log in.");
   try {
-    const refreshToken = req.cookies.refreshToken;
-    if (!refreshToken) return res.status(401).json({ message: "No refresh token provided" });
-
-    jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, async (err, decoded) => {
-      if (err) return res.status(403).json({ message: "Invalid refresh token" });
-
-      const user = await User.findById(decoded.id);
-      if (!user) return res.status(404).json({ message: "User not found" });
-
-      const accessToken = jwt.sign(
-        { id: user._id },
-        process.env.JWT_ACCESS_SECRET,
-        { expiresIn: "15m" }
-      );
-
-      // 👇 set cookie with the SAME options as login (dev-safe)
-      res.cookie("accessToken", accessToken, cookieOpts(15 * 60 * 1000));
-      res.json({ accessToken });
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { id } = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+    const user = await User.findById(id);
+    if (!user) return fail(res, 401, "Please log in.");
+    res.cookie("accessToken", signAccess(user), cookieOpts(ACCESS_MS));
+    res.json({ message: "Session refreshed" });
+  } catch {
+    fail(res, 401, "Your session has expired. Please log in again.");
   }
 };
 
-export const calculateBMI = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    const { weight, height } = user;
-    const heightInMeters = height / 100;
-    const bmi = weight / (heightInMeters * heightInMeters);
-    const bmiRounded = parseFloat(bmi.toFixed(2));
-
-    let category = "";
-    if (bmi < 18.5) category = "Underweight";
-    else if (bmi < 24.9) category = "Normal weight";
-    else if (bmi < 29.9) category = "Overweight";
-    else category = "Obese";
-
-    res.json({ bmi: bmiRounded, category });
-  } catch (err) {
-    console.error("Error calculating BMI:", err);
-    res.status(500).json({ message: "Internal server error" });
-  }
+export const calculateBMI = (req, res) => {
+  const { weight, height } = req.user;
+  if (!weight || !height) return fail(res, 400, "Add your height and weight to see your BMI.");
+  const bmi = weight / (height / 100) ** 2;
+  const category = bmi < 18.5 ? "Underweight" : bmi < 25 ? "Normal weight" : bmi < 30 ? "Overweight" : "Obese";
+  res.json({ bmi: Number(bmi.toFixed(1)), category });
 };

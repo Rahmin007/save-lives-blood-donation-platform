@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+      lowercase: true,
+      trim: true,
     },
     password: {
       type: String,
@@ -39,6 +41,7 @@ const userSchema = new mongoose.Schema(
     bloodGroup: {
       type: String,
       required: true,
+      enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
     },
     location: {
       type: {
@@ -64,6 +67,15 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ location: "2dsphere" });
+
+// Never send password hashes to the browser, even if a query forgets to exclude them.
+userSchema.set("toJSON", {
+  transform: (_doc, ret) => {
+    delete ret.password;
+    delete ret.__v;
+    return ret;
+  },
+});
 
 const User = mongoose.model("User", userSchema);
 

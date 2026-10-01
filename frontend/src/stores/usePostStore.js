@@ -1,118 +1,88 @@
 import { create } from "zustand";
-
-import axios from "axios";
-
-const axiosInstance = axios.create({
-  baseURL: "http://localhost:3000/api",
-  withCredentials: true,
-});
+import toast from "react-hot-toast";
+import { api, errorMessage } from "../lib/api";
 
 export const usePostStore = create((set, get) => ({
-  posts: [],
-  postStatus: [],
+  posts: [], // main feed
+  myPosts: [], // profile page (kept separate so it doesn't overwrite the feed)
   loadingPosts: false,
+  loadingMyPosts: false,
+  submitting: false,
+  activeFilter: null, // { urgency, time } while the feed is filtered
 
   fetchPosts: async () => {
-    set({ loadingPosts: true });
+    set({ loadingPosts: true, activeFilter: null });
     try {
-      const res = await axiosInstance.get("/post/getAllPosts");
-
-      set({ posts: res.data });
+      set({ posts: (await api.get("/post/getAllPosts")).data });
     } catch (error) {
-      console.log("error fetching posts", error.response?.data);
+      toast.error(errorMessage(error, "Could not load posts."));
     } finally {
       set({ loadingPosts: false });
     }
   },
 
+  /** Returns true on success so the form only clears when the post was saved. */
   createPost: async (postData) => {
-    set({ loadingPosts: true });
+    set({ submitting: true });
     try {
-      const res = await axiosInstance.post("/post/createPost", postData);
-      set((state) => ({ posts: [...state.posts, res.data] }));
-      return res;
+      const res = await api.post("/post/createPost", postData);
+      set((state) => ({ posts: [res.data.post, ...state.posts] })); // newest first
+      const n = res.data.notifiedDonors;
+      toast.success(n ? `Request posted. ${n} nearby donor${n > 1 ? "s were" : " was"} notified.` : "Request posted.");
+      return true;
     } catch (error) {
-      console.log("error creating post", error.response?.data);
+      toast.error(errorMessage(error, "Could not create the post."));
+      return false;
     } finally {
-      set({ loadingPosts: false });
+      set({ submitting: false });
     }
   },
 
-  updatePost: async (postId, updatedPostData) => {
-    set({ loadingPosts: true });
+  updatePost: async (postId, changes) => {
     try {
-      const res = await axiosInstance.patch(
-        `/post/updatePost/${postId}`,
-        updatedPostData
-      );
-      set((state) => ({
-        posts: state.posts.map((post) =>
-          post._id === postId ? { ...res.data.post, _id: post._id } : post
-        ),
-      }));
+      const { post } = (await api.patch(`/post/updatePost/${postId}`, changes)).data;
+      const replace = (list) => list.map((p) => (p._id === postId ? post : p));
+      set((state) => ({ posts: replace(state.posts), myPosts: replace(state.myPosts) }));
+      toast.success(changes.pending === false ? "Marked as fulfilled. Thank you!" : "Post updated.");
+      return true;
     } catch (error) {
-      console.log("Updating post failed:", error.response?.data);
-    } finally {
-      set({ loadingPosts: false });
+      toast.error(errorMessage(error, "Could not update the post."));
+      return false;
     }
   },
 
   deletePost: async (postId) => {
-    set({ loadingPosts: true });
     try {
-      await axiosInstance.delete(`/post/deletePost/${postId}`);
-
-      set((state) => ({
-        posts: state.posts.filter((post) => post._id !== postId),
-      }));
+      await api.delete(`/post/deletePost/${postId}`);
+      const drop = (list) => list.filter((p) => p._id !== postId);
+      set((state) => ({ posts: drop(state.posts), myPosts: drop(state.myPosts) }));
+      toast.success("Post deleted.");
     } catch (error) {
-      console.log("Deleting post failed:", error.response?.data);
-    } finally {
-      set({ loadingPosts: false });
-    }
-  },
-
-  fetchUserPosts: async (userId) => {
-    set({ loadingPosts: true });
-    try {
-      const res = await axiosInstance.get(`/post/getUserPosts/${userId}`);
-      set({ posts: res.data });
-    } catch (error) {
-      console.log("error fetching posts", error.response?.data);
-    } finally {
-      set({ loadingPosts: false });
-    }
-  },
-
-  getPostStatus: async () => {
-    set({ loadingPosts: true });
-    try {
-      const res = await axiosInstance.get(`/post/getPostStatus`);
-      set({ postStatus: res.data });
-    } catch (error) {
-      console.log("error fetching post statuses", error.response?.data);
-    } finally {
-      set({ loadingPosts: false });
+      toast.error(errorMessage(error, "Could not delete the post."));
     }
   },
 
   cancelPost: async (postId) => {
-    set({ loadingPosts: true });
     try {
-      const res = await axiosInstance.patch(`/post/${postId}/cancel`);
-      // Optionally update the local store to reflect that the post is canceled.
+      const { post } = (await api.patch(`/post/${postId}/cancel`)).data;
       set((state) => ({
-        posts: state.posts.map((post) =>
-          post._id === postId
-            ? { ...post, canceled: true, canceledAt: new Date() }
-            : post
-        ),
+        posts: state.posts.filter((p) => p._id !== postId),
+        myPosts: state.myPosts.map((p) => (p._id === postId ? { ...p, ...post, user: p.user } : p)),
       }));
-      return res;
+      toast.success("Request cancelled.");
     } catch (error) {
-      console.log("Canceling post failed:", error.response?.data);
+      toast.error(errorMessage(error, "Could not cancel the post."));
+    }
+  },
+
+  fetchUserPosts: async (userId) => {
+    set({ loadingMyPosts: true });
+    try {
+      set({ myPosts: (await api.get(`/post/getUserPosts/${userId}`)).data });
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not load your posts."));
     } finally {
-      set({ loadingPosts: false });
+      set({ loadingMyPosts: false });
     }
   },
 
@@ -120,13 +90,13 @@ export const usePostStore = create((set, get) => ({
     set({ loadingPosts: true });
     try {
       const query = new URLSearchParams(filters).toString();
-      const res = await axiosInstance.get(`/searchFilter/filterPosts?${query}`);
-
-      set({ posts: res.data.posts });
+      set({ posts: (await api.get(`/searchFilter/filterPosts?${query}`)).data.posts, activeFilter: filters });
     } catch (error) {
-      console.log("Error filtering posts:", error.response?.data);
+      toast.error(errorMessage(error, "Could not filter posts."));
     } finally {
       set({ loadingPosts: false });
     }
   },
+
+  clearFilter: () => get().fetchPosts(),
 }));

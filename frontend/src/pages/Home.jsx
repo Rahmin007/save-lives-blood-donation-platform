@@ -1,80 +1,40 @@
-// import React from "react";
-// import Navbar from "../components/Navbar";
-// import CreatePost from "../components/CreatePost";
-// import ShowPost from "../components/ShowPost";
-// import DonorSearch from "../components/DonorSearch";
-// import PostFilter from "../components/PostFilter";
-
-// const Home = () => {
-//   return (
-//     <div className="min-h-screen">
-//       {/* Top Navbar */}
-//       <Navbar />
-
-//       {/* Main content: 70/30 split */}
-//       <div className="flex flex-row h-full">
-//         {/* Left section */}
-//         <div className="w-full md:w-[70%] p-4">
-//           <CreatePost />
-//           <h1 className="text-2xl font-bold mb-4">Blood Donation Posts</h1>
-//           <PostFilter />
-//           <ShowPost />
-//         </div>
-
-//         {/* Right sidebar */}
-//         <div className="w-full md:w-[30%] p-4 border-l border-gray-200 bg-gray-50">
-//           <DonorSearch />
-//         </div>
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default Home;
-import React, { useState } from "react";
+import { useState } from "react";
+import { SlidersHorizontal } from "lucide-react";
 import Navbar from "../components/Navbar";
 import CreatePost from "../components/CreatePost";
 import ShowPost from "../components/ShowPost";
 import DonorSearch from "../components/DonorSearch";
 import PostFilter from "../components/PostFilter";
-import { FunnelIcon } from "@heroicons/react/24/outline"; // assuming you're using Heroicons
+import { usePostStore } from "../stores/usePostStore";
 
 const Home = () => {
   const [showFilter, setShowFilter] = useState(false);
+  const activeFilter = usePostStore((s) => s.activeFilter);
 
   return (
-    <div className="flex flex-col min-h-screen ">
+    <div className="min-h-screen bg-base-200">
       <Navbar />
-      <hr />
-
-      <div className="flex flex-1 flex-row ">
-        {/* Main Content */}
-        <div className="w-full md:w-[70%] p-4 bg-base-200">
+      {/* Stacked on phones, feed + sidebar side by side on large screens */}
+      <main className="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6">
+        <section className="min-w-0">
           <CreatePost />
-
-          {/* Heading with Filter Icon */}
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold">Blood Donation Posts</h1>
+          <div className="flex items-center justify-between mt-8 mb-4">
+            <h1 className="text-2xl font-bold">Blood requests</h1>
             <button
-              onClick={() => setShowFilter((prev) => !prev)}
-              className="btn btn-ghost btn-sm"
-              title="Toggle Filter"
+              onClick={() => setShowFilter((v) => !v)}
+              className={`btn btn-sm ${showFilter || activeFilter ? "btn-primary" : "btn-outline"}`}
+              aria-expanded={showFilter}
             >
-              <FunnelIcon className="h-6 w-6 text-white" />
+              <SlidersHorizontal size={16} aria-hidden="true" /> Filter
             </button>
           </div>
-
-          {/* Conditionally render PostFilter */}
           {showFilter && <PostFilter />}
-
           <ShowPost />
-        </div>
-
-        {/* Sidebar */}
-        <div className="w-full md:w-[30%] pl-2 pr-2 border-l border-gray-200 bg-base-200 ">
+        </section>
+        <aside className="lg:sticky lg:top-20 self-start">
           <DonorSearch />
-        </div>
-      </div>
+        </aside>
+      </main>
     </div>
   );
 };

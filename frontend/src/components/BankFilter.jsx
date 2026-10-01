@@ -21,8 +21,8 @@ const BankFilter = () => {
   };
 
   return (
-    <div className="p-4 bg-base-200 rounded-lg shadow mb-8">
-      <h2 className="text-xl font-bold mb-4">Filter Blood Banks by Group</h2>
+    <div className="card bg-base-100 border border-base-300 p-4">
+      <h2 className="text-lg font-bold mb-4">Stock by blood group</h2>
 
       <div className="flex flex-col md:flex-row items-center gap-4 mb-4">
         <select
@@ -30,7 +30,7 @@ const BankFilter = () => {
           value={selectedGroup}
           onChange={(e) => setSelectedGroup(e.target.value)}
         >
-          <option value="" disabled className="text-black">
+          <option value="" disabled>
             Select Blood Group
           </option>
           {bloodGroups.map((group) => (
@@ -54,29 +54,25 @@ const BankFilter = () => {
       {/* Show results only after search */}
       {hasSearched && (
         <>
-          {console.log("Filtered Bank Data:", filteredBankData)}
           {filteredBankData.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredBankData.map((bank) => (
                 <div
                   key={bank._id}
-                  className="bg-base-100 p-4 rounded shadow border"
+                  className="border border-base-300 rounded-box p-4"
                 >
                   <h3 className="text-lg font-semibold mb-1">{bank.name}</h3>
                   <p>
                     <span className="font-medium">Available:</span>{" "}
-                    {bank.quantity ?? 0} units
+                    {bank.quantity ?? 0} bags
                   </p>
 
-                  <p className="text-sm text">
-                    Location: Lat {bank.location.latitude}, Lng{" "}
-                    {bank.location.longitude}
-                  </p>
+
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-center text mt-4">
+            <p className="text-center text-base-content/60 mt-4">
               No banks found for selected group.
             </p>
           )}

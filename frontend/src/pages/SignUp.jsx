@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import MapComponent from "../components/MapComponent";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { Droplet } from "lucide-react";
+import { homePath } from "../lib/routes";
+import { errorMessage } from "../lib/api";
 import { useAuthStore } from "../stores/useAuthStore";
 
 const SignUp = () => {
@@ -52,11 +55,10 @@ const SignUp = () => {
     setMessage("");
     setLoading(true);
     try {
-      await signup(formData);
-      navigate("/");
+      const res = await signup(formData);
+      navigate(homePath({ user: res.data.user }), { replace: true }); // already logged in
     } catch (error) {
-      const msg = error.response?.data?.message || error.message || "Signup failed. Please try again.";
-      setMessage(msg);
+      setMessage(errorMessage(error, "Sign-up failed. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -64,16 +66,21 @@ const SignUp = () => {
 
   return (
     <div className="flex justify-center items-center min-h-screen p-4 ">
-      <div className="bg-base-300 p-6 rounded-lg shadow-lg w-full max-w-xl">
-        {message && <p className="text-center text-red-500 mb-4">{message}</p>}
+      <div className="card bg-base-100 p-6 sm:p-8 shadow-xl w-full max-w-2xl">
+        <div className="flex items-center gap-2 text-primary font-bold text-xl mb-1">
+          <Droplet className="fill-primary" size={24} aria-hidden="true" /> Save Lives
+        </div>
+        <h1 className="text-2xl font-bold">Create your donor account</h1>
+        <p className="text-base-content/70 mb-5">Your blood group and location help people nearby find you when they need blood.</p>
+        {message && <div role="alert" className="alert alert-error text-sm py-2 mb-4">{message}</div>}
 
-        <form className=" grid grid-cols-2 gap-4 bg-base-300">
+        <form onSubmit={handleSubmit} noValidate className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Left Column */}
           <div className="flex flex-col gap-4">
             <input
               type="text"
               placeholder="Name"
-              className="input-primary bg-base-200 rounded-lg p-2 shadow-sm focus:outline-none"
+              className="input input-bordered w-full"
               required
               name="name"
               value={formData.name}
@@ -82,7 +89,7 @@ const SignUp = () => {
             <input
               type="email"
               placeholder="Email"
-              className="bg-base-200 input-primary rounded-lg p-2 shadow-sm focus:outline-none"
+              className="input input-bordered w-full"
               required
               name="email"
               value={formData.email}
@@ -91,7 +98,7 @@ const SignUp = () => {
             <input
               type="password"
               placeholder="Password"
-              className="bg-base-200 input-primary rounded-lg p-2 shadow-sm focus:outline-none"
+              className="input input-bordered w-full"
               required
               name="password"
               value={formData.password}
@@ -99,7 +106,7 @@ const SignUp = () => {
             />
             <select
               name="bloodGroup"
-              className="bg-base-200 input-primary rounded-lg p-2 shadow-sm focus:outline-none"
+              className="input input-bordered w-full"
               required
               value={formData.bloodGroup}
               onChange={handleChange}
@@ -115,12 +122,12 @@ const SignUp = () => {
               <option value="O-">O-</option>
             </select>
 
-            <div className="flex items-center rounded-lg p-2 shadow-sm bg-base-200">
-              <span className="input-primary pr-2">+880</span>
+            <div className="flex items-center input input-bordered w-full">
+              <span className="pr-2 text-base-content/60">+880</span>
               <input
                 type="text"
                 placeholder="1XXXXXXXXX"
-                className="bg-base-200 input-primary flex-1 outline-none focus:outline-none"
+                className="flex-1 outline-none bg-transparent"
                 required
                 name="mobile"
                 value={formData.mobile}
@@ -137,7 +144,7 @@ const SignUp = () => {
           <div className="flex flex-col gap-4">
             <select
               name="gender"
-              className="bg-base-200 select-primary rounded-lg p-2 shadow-sm focus:outline-none"
+              className="select select-bordered w-full"
               required
               value={formData.gender}
               onChange={handleChange}
@@ -150,7 +157,7 @@ const SignUp = () => {
             <input
               type="number"
               placeholder="Age"
-              className="bg-base-200 input-primary rounded-lg p-2 shadow-sm focus:outline-none"
+              className="input input-bordered w-full"
               required
               name="age"
               value={formData.age}
@@ -162,7 +169,7 @@ const SignUp = () => {
             <input
               type="number"
               placeholder="Height (cm)"
-              className="bg-base-200 input-primary rounded-lg p-2 shadow-sm focus:outline-none"
+              className="input input-bordered w-full"
               required
               name="height"
               value={formData.height}
@@ -178,7 +185,7 @@ const SignUp = () => {
             <input
               type="number"
               placeholder="Weight (kg)"
-              className="bg-base-200 input-primary rounded-lg p-2 shadow-sm focus:outline-none"
+              className="input input-bordered w-full"
               required
               name="weight"
               value={formData.weight}
@@ -192,9 +199,9 @@ const SignUp = () => {
               disabled={!formData.gender}
             />
           </div>
-          <div className="mt-6 col-span-2">
+          <div className="mt-2 sm:col-span-2">
             <h3
-              className="text-lg font-semibold mb-2 cursor-pointer text-accent-content hover:underline"
+              className="text-base font-semibold mb-2 cursor-pointer text-primary hover:underline"
               onClick={() => setShowMap(!showMap)}
             >
               {showMap ? "Hide Map" : "📍 Select Your Location (optional)"}
@@ -205,26 +212,25 @@ const SignUp = () => {
               </div>
             )}
             {formData.latitude && (
-              <p className="text-xs text-green-500 mt-1">
+              <p className="text-xs text-success mt-1">
                 ✓ Location set: {formData.latitude.toFixed(4)}, {formData.longitude.toFixed(4)}
               </p>
             )}
           </div>
 
-          <div className="col-span-2 flex flex-col items-center mt-2">
+          <div className="sm:col-span-2 flex flex-col items-center mt-2">
             <button
-              className="btn text-white font-bold py-2 px-6 rounded-lg shadow-md w-full"
-              type="button"
-              onClick={handleSubmit}
+              className="btn btn-primary w-full"
+              type="submit"
               disabled={loading}
             >
               {loading ? "Signing up..." : "Sign Up"}
             </button>
             <p className="mt-2 text-sm">
-              Already signed up? Log in ➡{" "}
-              <a href="/" className="text hover:underline">
-                LOGIN
-              </a>
+              Already have an account?{" "}
+              <Link to="/" className="link link-primary font-medium">
+                Log in
+              </Link>
             </p>
           </div>
         </form>

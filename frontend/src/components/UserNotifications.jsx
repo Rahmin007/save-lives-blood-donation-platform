@@ -1,85 +1,50 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useNotificationStore } from "../stores/useNotificationStore";
+import { timeAgo } from "../lib/format";
 import Loading from "./Loading";
 
-const UserNotification = () => {
-  const {
-    notifications,
-    loadingNotifications,
-
-    markAllNotificationsAsRead,
-    deleteSingleNotification,
-    deleteAllNotification,
-  } = useNotificationStore();
+const UserNotifications = () => {
+  const { notifications, loadingNotifications, getNotifications, markAllNotificationsAsRead, deleteSingleNotification, deleteAllNotification } =
+    useNotificationStore();
 
   useEffect(() => {
-    useNotificationStore.getState().getNotifications();
-  }, []);
+    getNotifications();
+  }, [getNotifications]);
 
-  if (loadingNotifications) {
-    return (
-      <>
-        <Loading />
-      </>
-    );
-  }
+  if (loadingNotifications && !notifications.length) return <Loading fullScreen={false} />;
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex justify-end gap-4">
-        <button
-          onClick={markAllNotificationsAsRead}
-          disabled={notifications.length === 0}
-          className={`px-4 py-2 rounded text-white transition ${
-            notifications.length === 0
-              ? "bg-blue-300 cursor-not-allowed"
-              : "bg-blue-500 hover:bg-blue-600"
-          }`}
-        >
-          Mark All as Read
+    <div className="space-y-3">
+      <div className="flex flex-wrap justify-end gap-2">
+        <button onClick={markAllNotificationsAsRead} disabled={!notifications.some((n) => !n.isRead)} className="btn btn-outline btn-sm">
+          Mark all as read
         </button>
         <button
-          onClick={deleteAllNotification}
-          disabled={notifications.length === 0}
-          className={`px-4 py-2 rounded text-white transition ${
-            notifications.length === 0
-              ? "bg-red-300 cursor-not-allowed"
-              : "bg-red-500 hover:bg-red-600"
-          }`}
+          onClick={() => window.confirm("Delete all notifications?") && deleteAllNotification()}
+          disabled={!notifications.length}
+          className="btn btn-ghost btn-sm text-error"
         >
-          Delete All Notifications
+          Delete all
         </button>
       </div>
-
-      {notifications.length === 0 ? (
-        <p className="text-center text-gray-500">No notifications found.</p>
+      {!notifications.length ? (
+        <p className="text-center text-base-content/60 py-8">No notifications yet.</p>
       ) : (
-        notifications.map((notification) => (
-          <div
-            key={notification._id}
-            className={`flex justify-between items-center border p-4 rounded ${
-              notification.isRead
-                ? "bg-gray-300 text-gray-700"
-                : "bg-white text-black"
-            }`}
-          >
-            <div>
-              <p className="font-medium">{notification.message}</p>
-              <p className="text-sm text-gray-500">
-                {new Date(notification.createdAt).toLocaleString()}
-              </p>
-            </div>
-            <button
-              onClick={() => deleteSingleNotification(notification._id)}
-              className="text-red-500 hover:underline"
-            >
-              Delete
-            </button>
-          </div>
-        ))
+        <ul className="space-y-2">
+          {notifications.map((n) => (
+            <li key={n._id} className={`flex items-start gap-3 border rounded-box p-3 ${n.isRead ? "border-base-300" : "border-primary/40 bg-primary/5"}`}>
+              {!n.isRead && <span className="mt-2 w-2 h-2 rounded-full bg-primary shrink-0" aria-label="Unread" />}
+              <div className="flex-1">
+                <p className={n.isRead ? "" : "font-medium"}>{n.message}</p>
+                <p className="text-xs text-base-content/60">{timeAgo(n.createdAt)}</p>
+              </div>
+              <button onClick={() => deleteSingleNotification(n._id)} className="btn btn-ghost btn-xs" aria-label="Delete notification">✕</button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
 };
 
-export default UserNotification;
+export default UserNotifications;

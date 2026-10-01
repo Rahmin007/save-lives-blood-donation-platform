@@ -1,155 +1,113 @@
-// frontend/src/components/ShowPost.jsx
-import React, { useEffect } from "react";
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import { MessageCircle, MapPin, Clock } from "lucide-react";
 import { usePostStore } from "../stores/usePostStore";
 import { useAuthStore } from "../stores/useAuthStore";
-import { MapContainer, TileLayer, Marker } from "react-leaflet";
-import { useNavigate } from "react-router-dom";
-import L from "leaflet";
-import axios from "axios";
+import { markerIcon } from "../lib/map";
+import { timeAgo } from "../lib/format";
 import Loading from "./Loading";
 
-const axiosInstance = axios.create({
-  baseURL: "http://localhost:3000/api",
-  withCredentials: true,
-});
+const URGENCY_BADGE = { High: "badge-error", Medium: "badge-warning", Low: "badge-success" };
 
 const ShowPost = () => {
-  const { posts, fetchPosts, loadingPosts } = usePostStore();
-  const { user } = useAuthStore();
+  const { posts, fetchPosts, loadingPosts, activeFilter } = usePostStore();
+  const me = useAuthStore((s) => s.user?.user);
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchPosts?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    fetchPosts();
+  }, [fetchPosts]);
 
-  const markerIcon = new L.Icon({
-    iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-  });
+  // Opens the chat with a suggested first message; nothing is sent until the user presses Send.
+  const openChat = (author, post) =>
+    navigate("/messagepage", {
+      state: {
+        selectedUser: author,
+        draft: `Hi ${author.name}, I saw your request for ${post.bloodGroup} blood and I may be able to help.`,
+      },
+    });
 
-  const handleMessage = async (receiver, text) => {
-    try {
-      if (!receiver?._id) return;
-      await axiosInstance.post("/messages", {
-        receiverId: receiver._id,
-        text,
-      });
-      navigate("/messagepage", { state: { selectedUser: receiver } });
-    } catch (error) {
-      console.error("Failed to send message:", error.response?.data || error);
-      alert("Failed to send message. Try again.");
-    }
-  };
+  if (loadingPosts) return <Loading fullScreen={false} label="Loading requests" />;
 
-  if (loadingPosts) return <Loading />;
-
-  const list = Array.isArray(posts) ? posts : [];
-  if (list.length === 0) {
+  if (!posts.length) {
     return (
-      <div className="text-center mt-10 text-gray-600">
-        No posts found. Be the first to create one!
+      <div className="card bg-base-100 p-10 text-center text-base-content/70">
+        {activeFilter ? "No requests match this filter." : "No blood requests yet. Need blood? Post a request above."}
       </div>
     );
   }
 
-  // current user id (safe)
-  const myId = user?.user?._id ?? "";
-
   return (
-    <div className="max-w-6xl mx-auto p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      {list.map((post, idx) => {
-        const author = post?.user ?? null;
-        const authorId = author?._id ?? "";
-        const isSelf = myId && authorId && myId === authorId;
-
-        const hasLocation =
-          post?.location &&
-          typeof post.location.latitude === "number" &&
-          typeof post.location.longitude === "number";
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {posts.map((post) => {
+        const author = post.user;
+        const isSelf = author?._id === me?._id;
+        const hasLocation = Number.isFinite(post.location?.latitude) && Number.isFinite(post.location?.longitude);
 
         return (
-          <div
-            key={post?._id ?? idx}
-            className="card bg-base-100 shadow-md rounded-xl border hover:bg-base-300 transition duration-300 overflow-hidden"
-          >
-            <div className="card-body space-y-2">
-              <h2 className="card-title text-lg text-red-600">
-                Blood Group: {post?.bloodGroup ?? "N/A"}
-              </h2>
-
-              {post?.description && (
-                <p className="text">
-                  <strong>Description:</strong> {post.description}
-                </p>
-              )}
-
-              {typeof post?.quantity === "number" && (
-                <p>
-                  <strong>Quantity:</strong> {post.quantity} bag
-                  {post.quantity > 1 ? "s" : ""}
-                </p>
-              )}
-
-              {post?.urgency && (
-                <p>
-                  <strong>Urgency:</strong>{" "}
-                  <span
-                    className={`badge ${
-                      post.urgency === "High"
-                        ? "badge-error"
-                        : post.urgency === "Medium"
-                        ? "badge-warning"
-                        : "badge-success"
-                    }`}
-                  >
-                    {post.urgency}
+          <article key={post._id} className={`card bg-base-100 shadow-sm border border-base-300 ${post.pending ? "" : "opacity-70"}`}>
+            <div className="card-body gap-3 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="grid place-items-center w-14 h-14 rounded-full bg-primary text-primary-content text-xl font-bold shrink-0">
+                    {post.bloodGroup}
                   </span>
-                </p>
-              )}
+                  <div>
+                    <p className="font-semibold">{post.quantity} bag{post.quantity > 1 ? "s" : ""} needed</p>
+                    <p className="text-sm text-base-content/70">by {author?.name ?? "Unknown"}{isSelf && " (you)"}</p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`badge ${URGENCY_BADGE[post.urgency] ?? "badge-ghost"}`}>{post.urgency}</span>
+                  {!post.pending && <span className="badge badge-success badge-outline">Fulfilled</span>}
+                </div>
+              </div>
+
+              <p className="whitespace-pre-line break-words">{post.description}</p>
+
+              <p className="text-xs text-base-content/60 flex items-center gap-1">
+                <Clock size={13} aria-hidden="true" /> {timeAgo(post.createdAt)}
+              </p>
 
               {hasLocation && (
-                <div className="h-40 mt-2 rounded overflow-hidden">
+                <div className="h-36 rounded-lg overflow-hidden" aria-label="Location map">
                   <MapContainer
                     center={[post.location.latitude, post.location.longitude]}
                     zoom={13}
                     scrollWheelZoom={false}
+                    dragging={false}
+                    zoomControl={false}
                     style={{ height: "100%", width: "100%" }}
                   >
                     <TileLayer
                       attribution='&copy; <a href="https://osm.org/copyright">OpenStreetMap</a>'
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     />
-                    <Marker
-                      position={[
-                        post.location.latitude,
-                        post.location.longitude,
-                      ]}
-                      icon={markerIcon}
-                    />
+                    <Marker position={[post.location.latitude, post.location.longitude]} icon={markerIcon} />
                   </MapContainer>
                 </div>
               )}
 
-              {/* Only show Message button if:
-                  - we know who the author is, and
-                  - the current user is not the author */}
-              {author && !isSelf && (
-                <button
-                  className="btn btn-primary w-full"
-                  onClick={() =>
-                    handleMessage(
-                      author,
-                      `Regarding your blood request: ${post?.description ?? ""}`
-                    )
-                  }
-                >
-                  Message {author?.name ?? "User"}
-                </button>
-              )}
+              <div className="card-actions items-center justify-between">
+                {hasLocation && (
+                  <a
+                    className="link text-sm flex items-center gap-1"
+                    href={`https://www.google.com/maps?q=${post.location.latitude},${post.location.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <MapPin size={14} aria-hidden="true" /> Directions
+                  </a>
+                )}
+                {author && !isSelf && post.pending && (
+                  <button className="btn btn-primary btn-sm" onClick={() => openChat(author, post)}>
+                    <MessageCircle size={16} aria-hidden="true" /> Message {author.name.split(" ")[0]}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          </article>
         );
       })}
     </div>

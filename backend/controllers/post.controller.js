@@ -1,179 +1,116 @@
 import Post from "../models/post.model.js";
-
-import User from "../models/user.model.js";
-
 import { sendNotifications } from "./notification.controller.js";
+import { BLOOD_GROUPS, URGENCY_LEVELS, canModify, fail, intInRange, isId, validCoords } from "../utils/http.js";
+
+const AUTHOR_FIELDS = "name bloodGroup";
+
+/** Loads a post and checks the current user may change it (owner or admin). */
+const loadOwnPost = async (req, res) => {
+  const { postid } = req.params;
+  if (!isId(postid)) {
+    fail(res, 400, "Invalid post.");
+    return null;
+  }
+  const post = await Post.findById(postid);
+  if (!post) {
+    fail(res, 404, "Post not found.");
+    return null;
+  }
+  if (!canModify(req.user, post.user)) {
+    fail(res, 403, "You can only change your own posts.");
+    return null;
+  }
+  return post;
+};
 
 export const createPost = async (req, res) => {
-  try {
-    const { description, bloodGroup, location, quantity, urgency } = req.body;
-    if (!location || !location.latitude || !location.longitude) {
-      return res.status(400).json({ message: "Location is required" });
-    }
-    if (quantity < 0) {
-      return res.status(400).json({ message: "Quantity cannot be negative" });
-    }
+  const { description, bloodGroup, location, quantity, urgency = "Low" } = req.body;
+  if (!String(description ?? "").trim()) return fail(res, 400, "Please describe the situation.");
+  if (!BLOOD_GROUPS.includes(bloodGroup)) return fail(res, 400, "Please choose a valid blood group.");
+  const bags = intInRange(quantity, 1, 10);
+  if (bags === null) return fail(res, 400, "Quantity must be between 1 and 10 bags.");
+  if (!URGENCY_LEVELS.includes(urgency)) return fail(res, 400, "Please choose an urgency level.");
+  if (!validCoords(location?.latitude, location?.longitude)) return fail(res, 400, "Please choose a location on the map.");
 
-    const newPost = await Post.create({
-      description,
+  try {
+    const post = await Post.create({
+      description: String(description).trim(),
       bloodGroup,
-      location,
-      quantity,
-      user: req.user._id,
+      quantity: bags,
       urgency,
+      location: { latitude: Number(location.latitude), longitude: Number(location.longitude) },
+      user: req.user._id,
     });
-
-    await sendNotifications(newPost);
-
-    res.status(201).json({ post: newPost });
+    const notified = await sendNotifications(post);
+    await post.populate("user", AUTHOR_FIELDS);
+    res.status(201).json({ post, notifiedDonors: notified.length });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Post creation failed", error: error.message });
+    console.error("createPost", error);
+    fail(res, 500, "Could not create the post. Please try again.");
   }
 };
 
-//this is for the main feed
-export const getAllPosts = async (req, res) => {
-  try {
-    const posts = await Post.find({ canceled: false })
-      .sort({ createdAt: -1 })
-      .populate("user", "name");
-
-    res.status(200).json(posts);
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Failed to fetch posts", error: error.message });
-  }
+/** Main feed: open requests first, newest first. */
+export const getAllPosts = async (_req, res) => {
+  const posts = await Post.find({ canceled: false })
+    .sort({ pending: -1, createdAt: -1 })
+    .limit(200)
+    .populate("user", AUTHOR_FIELDS);
+  res.json(posts);
 };
 
-//this is for the user profile
+/** A user's own posts (profile page). Other people's cancelled posts stay private. */
 export const getUserPosts = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const userPosts = await Post.find({ user: userId }) // Find by user reference
-      .sort({ createdAt: -1 });
-    res.status(200).json(userPosts);
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Failed to fetch user posts", error: error.message });
-  }
+  const { userId } = req.params;
+  if (!isId(userId)) return fail(res, 400, "Invalid user.");
+  const filter = { user: userId };
+  if (!canModify(req.user, userId)) filter.canceled = false;
+  const posts = await Post.find(filter).sort({ createdAt: -1 }).populate("user", AUTHOR_FIELDS);
+  res.json(posts);
 };
 
+/** Edit description/quantity, or mark the request fulfilled (pending: false). */
 export const updatePost = async (req, res) => {
-  try {
-    const { postid } = req.params;
-    const { description, pending, quantity } = req.body;
+  const post = await loadOwnPost(req, res);
+  if (!post) return;
+  const { description, pending, quantity } = req.body;
 
-    const post = await Post.findById(postid);
-
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    if (description !== undefined) {
-      post.description = description;
-    }
-
-    if (pending !== undefined) {
-      post.pending = pending;
-    }
-    if (quantity !== undefined) {
-      post.quantity = quantity;
-    }
-
-    await post.save();
-
-    res.status(200).json({
-      message: "Post updated successfully",
-      post,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to update post",
-      error: error.message,
-    });
+  if (description !== undefined) {
+    if (!String(description).trim()) return fail(res, 400, "Description cannot be empty.");
+    post.description = String(description).trim();
   }
+  if (quantity !== undefined) {
+    const bags = intInRange(quantity, 1, 10);
+    if (bags === null) return fail(res, 400, "Quantity must be between 1 and 10 bags.");
+    post.quantity = bags;
+  }
+  if (pending !== undefined) post.pending = Boolean(pending);
+
+  await post.save();
+  await post.populate("user", AUTHOR_FIELDS);
+  res.json({ message: "Post updated", post });
 };
 
 export const deletePost = async (req, res) => {
-  try {
-    const { postid } = req.params;
-
-    const post = await Post.findById(postid);
-
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    await Post.findByIdAndDelete(postid);
-
-    res.status(200).json({ message: "Post deleted successfully" });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to delete post",
-      error: error.message,
-    });
-  }
+  const post = await loadOwnPost(req, res);
+  if (!post) return;
+  await post.deleteOne();
+  res.json({ message: "Post deleted" });
 };
 
-//this is for tracking status
-//raz
 export const getPostStatusofUser = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id);
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const userPosts = await Post.find({ user: user._id })
-      .sort({
-        createdAt: -1,
-      })
-      .select("pending description");
-
-    res.status(200).json(userPosts);
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Failed to fetch user posts", error: error.message });
-  }
+  const posts = await Post.find({ user: req.user._id })
+    .sort({ createdAt: -1 })
+    .select("description pending canceled quantity bloodGroup urgency createdAt");
+  res.json(posts);
 };
 
-//cancelling a post
-//hjb
 export const cancelPost = async (req, res) => {
-  try {
-    const { postid } = req.params;
-    const post = await Post.findById(postid);
-
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    if (post.canceled) {
-      return res.status(400).json({ message: "Post already cancelled" });
-    }
-
-    post.canceled = true;
-    post.canceledAt = new Date();
-
-    await post.save();
-
-    res.status(200).json({ message: "Post cancelled successfully" });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Failed to cancel post", error: error.message });
-  }
+  const post = await loadOwnPost(req, res);
+  if (!post) return;
+  if (post.canceled) return fail(res, 400, "This post is already cancelled.");
+  post.canceled = true;
+  post.canceledAt = new Date();
+  await post.save();
+  res.json({ message: "Post cancelled", post });
 };
